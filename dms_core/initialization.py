@@ -1,17 +1,27 @@
-import os
 import configparser
+import os
+
 import dms_core.config as cfg
 from dms_core.config import Colors
+from dms_core.engine_manager import download_engine, get_engine_path
 from dms_core.utils import clear_screen
-from dms_core.engine_manager import get_engine_path, download_engine
+
 
 def initial_setup() -> None:
     """Systemprüfung. Überspringt die Engine-Wahl, wenn bereits konfiguriert."""
     setup_activity = False
-    
+
     # 1. Ordner prüfen
-    required_dirs = ["iwad", "pwad", "mods", "Install", "Engines",
-                     os.path.join("mods", "doom"), os.path.join("mods", "heretic"), os.path.join("mods", "hexen")]
+    required_dirs = [
+        "iwad",
+        "pwad",
+        "mods",
+        "Install",
+        "Engines",
+        os.path.join("mods", "doom"),
+        os.path.join("mods", "heretic"),
+        os.path.join("mods", "hexen"),
+    ]
     for d in required_dirs:
         path = os.path.join(cfg.BASE_DIR, d)
         if not os.path.exists(path):
@@ -31,10 +41,16 @@ def initial_setup() -> None:
         print(f"\n  {Colors.RED}[!] Keine aktive Engine gefunden!{Colors.WHITE}\n")
         for i, eng in enumerate(cfg.SUPPORTED_ENGINES):
             check_path = os.path.join(cfg.ENGINE_BASE_DIR, eng, f"{eng}.exe")
-            status = f"{Colors.GREEN}[Bereit]{Colors.WHITE}" if os.path.exists(check_path) else ""
+            status = (
+                f"{Colors.GREEN}[Bereit]{Colors.WHITE}"
+                if os.path.exists(check_path)
+                else ""
+            )
             print(f"  {Colors.YELLOW}[{i+1}]{Colors.WHITE} {eng:<15} {status}")
-        
-        eng_choice = input("\n  Engine wählen (Zahl) oder N für manuell: ").strip().lower()
+
+        eng_choice = (
+            input("\n  Engine wählen (Zahl) oder N für manuell: ").strip().lower()
+        )
         if eng_choice.isdigit() and 1 <= int(eng_choice) <= len(cfg.SUPPORTED_ENGINES):
             selected = cfg.SUPPORTED_ENGINES[int(eng_choice) - 1]
             cfg.CURRENT_ENGINE = selected
@@ -47,7 +63,12 @@ def initial_setup() -> None:
         config = configparser.ConfigParser()
         config["STATS"] = {"total_seconds": "0"}
         config["ENGINE"] = {"current": cfg.CURRENT_ENGINE}
-        config["OPTIONS"] = {"showstats": "False", "usemods": "False", "debugmode": "False", "terminalwidth": "166"}
+        config["OPTIONS"] = {
+            "showstats": "False",
+            "usemods": "False",
+            "debugmode": "False",
+            "terminalwidth": "166",
+        }
         with open(cfg.CONFIG_FILE, "w", encoding="utf-8-sig") as f:
             config.write(f)
         setup_activity = True

@@ -1,22 +1,22 @@
-import os
-import json
-import time
-import shutil
-import zipfile
 import ctypes
+import json
+import os
+import shutil
+import time
 import urllib.request
 import webbrowser
-import subprocess
+import zipfile
 from datetime import datetime
 
 import dms_core.config as cfg
 from dms_core.config import Colors
-from dms_core.utils import resize_terminal, clear_screen
 from dms_core.database import save_settings
+from dms_core.utils import clear_screen, resize_terminal
 
 # ============================================================================
 # ENGINE-MANAGEMENT
 # ============================================================================
+
 
 def get_engine_path(engine_name: str = None) -> str:
     eng = engine_name if engine_name else cfg.CURRENT_ENGINE
@@ -62,7 +62,9 @@ def get_engine_version(engine_path: str) -> str:
 
 
 def download_engine(engine_name: str) -> None:
-    print(f"\n  {Colors.MAGENTA}>>> Bereite Download für {engine_name} vor... <<<{Colors.WHITE}")
+    print(
+        f"\n  {Colors.MAGENTA}>>> Bereite Download für {engine_name} vor... <<<{Colors.WHITE}"
+    )
 
     zip_path = os.path.join(cfg.BASE_DIR, f"{engine_name}_temp.zip")
     download_url = ""
@@ -82,11 +84,15 @@ def download_engine(engine_name: str) -> None:
                     if any(x in name for x in ["sources", "dev", "debug", "pdb"]):
                         continue
 
-                    is_windows = any(x in name for x in ["win64", "windows", "x64", "w64"])
+                    is_windows = any(
+                        x in name for x in ["win64", "windows", "x64", "w64"]
+                    )
 
                     if is_windows and name.endswith(".zip"):
                         download_url = asset.get("browser_download_url")
-                        print(f"  {Colors.GREEN}[Found]{Colors.WHITE} Version: {asset.get('name')}")
+                        print(
+                            f"  {Colors.GREEN}[Found]{Colors.WHITE} Version: {asset.get('name')}"
+                        )
                         break
         except Exception as e:
             print(f"  {Colors.RED}[!] API-Fehler (GitHub): {e}{Colors.WHITE}")
@@ -97,11 +103,17 @@ def download_engine(engine_name: str) -> None:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                print(f"  {Colors.GRAY}(Lade: {download_url.split('/')[-1]} - Versuch {attempt+1}/{max_retries}){Colors.WHITE}")
+                print(
+                    f"  {Colors.GRAY}(Lade: {download_url.split('/')[-1]} - Versuch {attempt+1}/{max_retries}){Colors.WHITE}"
+                )
                 req = urllib.request.Request(download_url)
-                req.add_header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                req.add_header(
+                    "User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                )
 
-                with urllib.request.urlopen(req, timeout=15) as response, open(zip_path, "wb") as out_file:
+                with urllib.request.urlopen(req, timeout=15) as response, open(
+                    zip_path, "wb"
+                ) as out_file:
                     shutil.copyfileobj(response, out_file)
 
                 if not zipfile.is_zipfile(zip_path):
@@ -125,7 +137,9 @@ def download_engine(engine_name: str) -> None:
                                 os.replace(src, dst)
                         break
 
-                print(f"  {Colors.GREEN}[+] {engine_name} erfolgreich installiert!{Colors.WHITE}")
+                print(
+                    f"  {Colors.GREEN}[+] {engine_name} erfolgreich installiert!{Colors.WHITE}"
+                )
                 time.sleep(1.5)
                 return
 
@@ -141,7 +155,9 @@ def download_engine(engine_name: str) -> None:
     print(f"\n  {Colors.RED}Automatischer Download fehlgeschlagen.{Colors.WHITE}")
     print("  Ich öffne jetzt die Download-Seite für dich.")
     print("  Bitte lade die ZIP manuell herunter und entpacke sie nach:")
-    print(f"  {Colors.CYAN}{os.path.join(cfg.ENGINE_BASE_DIR, engine_name)}{Colors.WHITE}")
+    print(
+        f"  {Colors.CYAN}{os.path.join(cfg.ENGINE_BASE_DIR, engine_name)}{Colors.WHITE}"
+    )
 
     fallback_site = (
         "https://zandronum.com/download"
@@ -204,7 +220,9 @@ def select_engine() -> None:
             cfg.CURRENT_ENGINE = selected["name"]
             save_settings()
 
-            print(f"\n  {Colors.GREEN}[+] Wechsel zu {cfg.CURRENT_ENGINE}!{Colors.WHITE}")
+            print(
+                f"\n  {Colors.GREEN}[+] Wechsel zu {cfg.CURRENT_ENGINE}!{Colors.WHITE}"
+            )
             time.sleep(1)
 
             resize_terminal(cfg.TERMINAL_WIDTH, 60)

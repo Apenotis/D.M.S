@@ -1,12 +1,14 @@
-import os
 import csv
+import os
 import re
+
 import dms_core.config as cfg
 from dms_core.config import Colors
 
 # ============================================================================
 # MAPS LADEN & KATEGORISIEREN
 # ============================================================================
+
 
 def load_maps() -> dict[int, list]:
     """
