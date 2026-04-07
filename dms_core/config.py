@@ -9,7 +9,6 @@ UPDATE_URL = "https://raw.githubusercontent.com/Apenotis/D.M.S/main/dms_core/con
 ZIP_DOWNLOAD_URL = "https://github.com/Apenotis/D.M.S/archive/refs/heads/main.zip"
 
 # --- BASIS PFADE ---
-# WICHTIG: Da diese Datei im Ordner dms_core liegt, gehen wir EINE Ebene nach oben!
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CONFIG_FILE = os.path.join(BASE_DIR, "config.ini")

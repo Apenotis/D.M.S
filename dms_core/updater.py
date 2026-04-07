@@ -33,7 +33,7 @@ def check_uzdoom_update() -> tuple[bool, str]:
 
 def check_launcher_update(auto: bool = False) -> None:
     """
-    Prüft auf GitHub, ob eine neuere Version (in config.py) vorliegt.
+    Prüft auf GitHub, ob eine neuere Version vorliegt.
     Zieht sich das Changelog aus dem neuesten Release und fragt den Nutzer.
     """
     if not auto:

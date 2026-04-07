@@ -50,7 +50,6 @@ def load_settings() -> None:
                     "debugmode", fallback=False
                 )
 
-            # --- SICHERHEITS-FIX: Leere Update-Felder reparieren ---
             if "UPDATE" in config:
                 last_c = config["UPDATE"].get("last_check", "").strip()
                 next_c = config["UPDATE"].get("next_check", "").strip()
@@ -230,10 +229,6 @@ def reorganize_map_indices() -> None:
 
 def get_next_id(category):
     """Berechnet die nächste freie ID (I-xxx, P-xxx, E-xxx)."""
-    import csv
-
-    import dms_core.config as cfg
-
     prefix = "P"
     if category == "IWAD":
         prefix = "I"

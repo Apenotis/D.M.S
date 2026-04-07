@@ -13,8 +13,7 @@ from dms_core.config import Colors
 
 def _analyze_session(session_time: int, map_id: str, mapname: str) -> None:
     """
-    Speichert die Spielzeit global und in der CSV (1:1 Wie im Original).
-    Wird nach dem Beenden des Spiels aufgerufen.
+    Speichert die Spielzeit global und in der CSV
     """
     if session_time < 5:
         return
@@ -66,8 +65,6 @@ def _analyze_session(session_time: int, map_id: str, mapname: str) -> None:
 def launch_game(map_data: tuple) -> None:
     """
     Bereitet den Start der ausgewählten Map vor.
-    Enthält die exakte 1:1 Logik aus der originalen Doom.py,
-    aber mit einem optisch stark aufgewerteten Debug-Menü.
     """
     utils.resize_terminal(70, 30)
     utils.clear_screen()
