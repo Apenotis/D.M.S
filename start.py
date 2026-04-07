@@ -165,7 +165,7 @@ def _draw_main_ui(blocks, foot_core):
     utils.clear_screen()
     print_banner(inner_w)
 
-    last_id = db.get_last_played_id_from_csv()
+    last_id = db.get_last_id()
 
     # Tabellen-Header
     h_parts = [
