@@ -33,7 +33,7 @@ def check_uzdoom_update() -> tuple[bool, str]:
 def check_launcher_update(auto: bool = False) -> None:
     """
     Prüft auf GitHub, ob eine neuere Version (in config.py) vorliegt.
-    Wenn ja, wird das gesamte Projekt als ZIP geladen, entpackt und geupdatet.
+    Zieht sich das Changelog aus dem neuesten Release und fragt den Nutzer.
     """
     if not auto:
         utils.clear_screen()
@@ -53,17 +53,39 @@ def check_launcher_update(auto: bool = False) -> None:
 
         online_version = match.group(1)
         
-        # Versionsvergleich (einfacher Float-Vergleich reicht meist für x.y)
+        # 2. Versionsvergleich
         if float(online_version) > float(cfg.APP_VERSION):
-            if auto:
-                # Bei Auto-Update (im Hintergrund beim Start): Bildschirm kurz für den Hinweis nutzen
-                utils.clear_screen()
-                print(f"\n  {Colors.YELLOW}[!] EIN NEUES UPDATE (v{online_version}) IST VERFÜGBAR!{Colors.WHITE}\n")
+            utils.clear_screen()
+            print(f"\n  {Colors.GREEN}╭──────────────────────────────────────────────────╮{Colors.WHITE}")
+            print(f"  {Colors.GREEN}│{Colors.YELLOW}  EIN NEUES UPDATE (v{online_version}) IST VERFÜGBAR!        {Colors.GREEN}│{Colors.WHITE}")
+            print(f"  {Colors.GREEN}╰──────────────────────────────────────────────────╯{Colors.WHITE}\n")
             
-            print(f"  {Colors.GREEN}Update gefunden: Version {online_version}{Colors.WHITE}")
-            print(f"  {Colors.CYAN}Lade ZIP-Archiv von GitHub herunter...{Colors.WHITE}")
+            # 3. Changelog von den GitHub Releases abrufen
+            changelog = "Keine detaillierten Patchnotes angegeben."
+            try:
+                # Nutzt den neuen D.M.S Namen für die API-Abfrage
+                api_req = urllib.request.Request("https://api.github.com/repos/Apenotis/D.M.S/releases/latest")
+                with urllib.request.urlopen(api_req, timeout=2) as api_response:
+                    data = json.loads(api_response.read().decode())
+                    if "body" in data and data["body"]:
+                        changelog = data["body"]
+            except Exception:
+                pass # Falls kein Release angelegt wurde, überspringen wir das leise
+
+            print(f"  {Colors.CYAN}--- WAS IST NEU? ---{Colors.WHITE}")
+            for line in changelog.splitlines():
+                print(f"  {Colors.GRAY}{line}{Colors.WHITE}")
+            print(f"  {Colors.CYAN}--------------------{Colors.WHITE}\n")
             
-            _install_zip_update()
+            # 4. Sicherheits-Abfrage
+            choice = input(f"  {Colors.YELLOW}Möchtest du das Update jetzt installieren? (J/N): {Colors.WHITE}").strip().lower()
+            
+            if choice == "j":
+                print(f"\n  {Colors.CYAN}Lade ZIP-Archiv von GitHub herunter...{Colors.WHITE}")
+                _install_zip_update()
+            else:
+                print(f"\n  {Colors.RED}Update übersprungen. D.M.S. wird normal gestartet.{Colors.WHITE}")
+                time.sleep(2)
             
         else:
             if not auto:
@@ -95,7 +117,7 @@ def _install_zip_update() -> None:
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(extract_dir)
             
-        # 4. Den Hauptordner im entpackten ZIP finden (GitHub nennt ihn z.B. "UzDoom-Launcher-Mapinstaller-main")
+        # 4. Den Hauptordner im entpackten ZIP finden
         extracted_folders = os.listdir(extract_dir)
         if not extracted_folders:
             raise Exception("ZIP-Datei war leer.")
@@ -105,12 +127,10 @@ def _install_zip_update() -> None:
         # 5. Dateien überschreiben
         print(f"  {Colors.CYAN}Installiere Update...{Colors.WHITE}")
         
-        # a) start.py überschreiben
         src_start = os.path.join(repo_folder, "start.py")
         if os.path.exists(src_start):
             shutil.copy2(src_start, os.path.join(cfg.BASE_DIR, "start.py"))
             
-        # b) dms_core Ordner überschreiben (dirs_exist_ok=True überschreibt existierende Dateien)
         src_core = os.path.join(repo_folder, "dms_core")
         if os.path.exists(src_core):
             shutil.copytree(src_core, os.path.join(cfg.BASE_DIR, "dms_core"), dirs_exist_ok=True)
