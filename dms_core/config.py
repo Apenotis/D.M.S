@@ -5,7 +5,8 @@ import os
 # ============================================================================
 
 APP_VERSION = "3.1"
-UPDATE_URL = "https://raw.githubusercontent.com/Apenotis/UzDoom-Launcher-Mapinstaller/main/Doom.py"
+UPDATE_URL = "https://raw.githubusercontent.com/Apenotis/D.M.S/main/dms_core/config.py"
+ZIP_DOWNLOAD_URL = "https://github.com/Apenotis/D.M.S/archive/refs/heads/main.zip"
 
 # --- BASIS PFADE ---
 # WICHTIG: Da diese Datei im Ordner dms_core liegt, gehen wir EINE Ebene nach oben!
