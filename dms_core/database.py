@@ -6,6 +6,10 @@ from datetime import datetime
 
 import dms_core.config as cfg
 
+# ============================================================================
+# STATISTIKEN & SETTINGS
+# ============================================================================
+
 
 def get_total_seconds() -> int:
     config = configparser.ConfigParser()
@@ -37,8 +41,6 @@ def load_settings() -> None:
     if os.path.exists(cfg.CONFIG_FILE):
         try:
             config.read(cfg.CONFIG_FILE, encoding="utf-8-sig")
-
-            # --- Engine & Optionen laden ---
             if "ENGINE" in config:
                 cfg.CURRENT_ENGINE = config["ENGINE"].get("current", cfg.CURRENT_ENGINE)
             if "OPTIONS" in config:
@@ -49,17 +51,6 @@ def load_settings() -> None:
                 cfg.DEBUG_MODE = config["OPTIONS"].getboolean(
                     "debugmode", fallback=False
                 )
-
-            if "UPDATE" in config:
-                last_c = config["UPDATE"].get("last_check", "").strip()
-                next_c = config["UPDATE"].get("next_check", "").strip()
-                # Wenn das Feld leer ist, überschreiben wir es in der Config-Datei mit "0"
-                if not last_c or not next_c:
-                    config["UPDATE"]["last_check"] = last_c if last_c else "0"
-                    config["UPDATE"]["next_check"] = next_c if next_c else "0"
-                    with open(cfg.CONFIG_FILE, "w", encoding="utf-8-sig") as f:
-                        config.write(f)
-
         except Exception:
             pass
 
@@ -74,8 +65,6 @@ def save_settings() -> None:
     if "ENGINE" not in config:
         config["ENGINE"] = {}
     config["ENGINE"]["current"] = cfg.CURRENT_ENGINE
-    if "OPTIONS" not in config:
-        config["OPTIONS"] = {}
     config["OPTIONS"] = {
         "showstats": str(cfg.SHOW_STATS),
         "usemods": str(cfg.USE_MODS),
@@ -86,26 +75,27 @@ def save_settings() -> None:
         config.write(f)
 
 
+# ============================================================================
+# MAP-MANAGEMENT
+# ============================================================================
+
+
 def update_last_played(map_id):
-    """Aktualisiert das LastPlayed-Datum für die gegebene ID in der CSV."""
     if not os.path.exists(cfg.CSV_FILE):
         return
-
     rows = []
     today = datetime.now().strftime("%d.%m.%Y")
-
     with open(cfg.CSV_FILE, "r", encoding="utf-8-sig") as f:
-        reader = csv.reader(f, delimiter=";" if ";" in f.read(100) else ",")
+        delim = ";" if ";" in f.read(100) else ","
         f.seek(0)
-        header = next(reader)
-        for row in reader:
+        reader = list(csv.reader(f, delimiter=delim))
+        header = reader[0]
+        for row in reader[1:]:
             if row and row[0] == str(map_id):
-                # Index 8 ist 'LastPlayed' laut deiner CSV Struktur
                 while len(row) < 9:
                     row.append("-")
                 row[8] = today
             rows.append(row)
-
     with open(cfg.CSV_FILE, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f, delimiter=";")
         writer.writerow(header)
@@ -113,35 +103,27 @@ def update_last_played(map_id):
 
 
 def get_last_played_id_from_csv():
-    """Findet die ID, die das aktuellste Datum in der Spalte LastPlayed hat."""
     if not os.path.exists(cfg.CSV_FILE):
         return "1"
-
-    last_id = "1"
-    latest_date = None
-
+    last_id, latest_date = "1", None
     with open(cfg.CSV_FILE, "r", encoding="utf-8-sig") as f:
-        content = f.read(100)
-        delim = ";" if ";" in content else ","
+        delim = ";" if ";" in f.read(100) else ","
         f.seek(0)
         reader = csv.DictReader(f, delimiter=delim)
         for row in reader:
             lp = row.get("LastPlayed", "").strip()
-            if lp and lp != "0" and lp != "-":
+            if lp and lp not in ["0", "-", ""]:
                 try:
-                    # Datum parsen (DD.MM.YYYY)
                     current_date = datetime.strptime(lp, "%d.%m.%Y")
                     if latest_date is None or current_date >= latest_date:
-                        latest_date = current_date
-                        last_id = row.get("ID", "1")
+                        latest_date, last_id = current_date, row.get("ID", "1")
                 except Exception:
                     pass
     return last_id
 
 
 def toggle_map_clear(map_id: str) -> bool:
-    rows = []
-    found = False
+    rows, found = [], False
     with open(cfg.CSV_FILE, "r", encoding="utf-8-sig") as f:
         reader = list(csv.reader(f))
         header = reader[0]
@@ -160,8 +142,7 @@ def toggle_map_clear(map_id: str) -> bool:
 
 
 def toggle_mod_skip(map_id: str) -> bool:
-    rows = []
-    found = False
+    rows, found = [], False
     with open(cfg.CSV_FILE, "r", encoding="utf-8-sig") as f:
         reader = list(csv.DictReader(f))
         fieldnames = list(reader[0].keys())
@@ -188,9 +169,7 @@ def uninstall_map(map_id: str) -> bool:
                 to_del = row
             else:
                 rows.append(row)
-    if not to_del:
-        return False
-    if to_del[6].upper() == "IWAD":
+    if not to_del or to_del[6].upper() == "IWAD":
         return False
     print(f"\n  Lösche '{to_del[1]}'? (JA zum Bestätigen)")
     if input("> ").strip() == "JA":
@@ -203,53 +182,76 @@ def uninstall_map(map_id: str) -> bool:
     return True
 
 
+# ============================================================================
+# REORGANIZE (ID-LOGIK & SPALTEN-SORTIERUNG)
+# ============================================================================
+
+
 def reorganize_map_indices() -> None:
     if not os.path.exists(cfg.CSV_FILE):
         return
+    rows = []
     with open(cfg.CSV_FILE, "r", encoding="utf-8-sig") as f:
-        reader = list(csv.DictReader(f))
-    if not reader:
-        return
-    iwads = [r for r in reader if r["Kategorie"].upper() == "IWAD"]
-    pwads = [r for r in reader if r["Kategorie"].upper() == "PWAD"]
-    extras = [
-        r for r in reader if r["Kategorie"].upper() in ["EXTRA", "HERETIC", "HEXEN"]
-    ]
+        reader = csv.DictReader(f)
+        # Wir filtern hier alle "EMPTY" Platzhalter radikal raus
+        rows = [
+            r
+            for r in list(reader)
+            if r.get("ID") != "EMPTY" and r.get("Name") != "EMPTY"
+        ]
 
+    if not rows:
+        return
+
+    # Kategorien trennen
+    iwads = [r for r in rows if r["Kategorie"].upper() == "IWAD"]
+    pwads = [r for r in rows if r["Kategorie"].upper() == "PWAD"]
+    extras_raw = [r for r in rows if r["Kategorie"].upper() == "EXTRA"]
+
+    # Durchnummerieren
     for i, r in enumerate(iwads, 1):
         r["ID"] = str(i)
-    for i, r in enumerate(pwads, len(iwads) + 1):
+    for i, r in enumerate(pwads, 1):
         r["ID"] = str(i)
-    # Extras behalten ihre H/X Präfixe meistens bei, hier nur Sortierung
+
+    # Extras aufbereiten (Präfixe H/X)
+    final_extras = []
+    heretics = [r for r in extras_raw if "heretic" in r["IWAD"].lower()]
+    hexens = [r for r in extras_raw if "hexen" in r["IWAD"].lower()]
+    others = [r for r in extras_raw if r not in heretics and r not in hexens]
+
+    for i, r in enumerate(heretics, 1):
+        r["ID"] = f"H{i}"
+        final_extras.append(r)
+
+    for i, r in enumerate(hexens, 1):
+        r["ID"] = f"X{i}"
+        final_extras.append(r)
+
+    final_extras.extend(others)
+
+    # Speichern
+    fieldnames = [
+        "ID",
+        "Name",
+        "IWAD",
+        "Ordner",
+        "MOD",
+        "ARGS",
+        "Kategorie",
+        "Playtime",
+        "LastPlayed",
+    ]
     with open(cfg.CSV_FILE, "w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(reader[0].keys()))
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(iwads + pwads + extras)
+        writer.writerows(iwads + pwads + final_extras)
 
 
-def get_next_id(category):
-    """Berechnet die nächste freie ID (I-xxx, P-xxx, E-xxx)."""
-    prefix = "P"
-    if category == "IWAD":
-        prefix = "I"
-    elif category in ["EXTRA", "HERETIC", "HEXEN"]:
-        prefix = "E"
-
-    ids = []
-    if os.path.exists(cfg.CSV_FILE):
-        with open(cfg.CSV_FILE, "r", encoding="utf-8-sig") as f:
-            content = f.read()
-            delim = ";" if ";" in content else ","
-            f.seek(0)
-            reader = csv.reader(f, delimiter=delim)
-            next(reader, None)  # Header überspringen
-            for row in reader:
-                if row and row[0].startswith(prefix):
-                    try:
-                        num = int(row[0].split("-")[1])
-                        ids.append(num)
-                    except Exception:
-                        pass
-
-    next_num = max(ids) + 1 if ids else 1
-    return f"{prefix}-{next_num:03d}"
+def get_next_id(category: str) -> str:
+    """Provisorische ID für den Installer."""
+    if category == "HERETIC":
+        return "H99"
+    if category == "HEXEN":
+        return "X99"
+    return "99"
