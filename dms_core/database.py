@@ -240,42 +240,60 @@ def uninstall_map(map_id: str) -> bool:
 def reorganize_map_indices() -> None:
     if not os.path.exists(cfg.CSV_FILE):
         return
+
     rows = []
+    # 1. Trenner ermitteln und Daten einlesen
     with open(cfg.CSV_FILE, "r", encoding="utf-8-sig") as f:
-        delim = ";" if ";" in f.read(100) else ","
+        content = f.read(100)
+        delim = ";" if ";" in content else ","
         f.seek(0)
-        reader = csv.DictReader(f, delimiter=delim)
+        reader = list(csv.DictReader(f, delimiter=delim))
+        # Filter: EMPTY-Einträge entfernen
         rows = [
-            r
-            for r in list(reader)
-            if r.get("ID") != "EMPTY" and r.get("Name") != "EMPTY"
+            r for r in reader if r.get("ID") != "EMPTY" and r.get("Name") != "EMPTY"
         ]
 
     if not rows:
         return
 
+    # 2. Kategorien trennen
     iwads = [r for r in rows if r["Kategorie"].upper() == "IWAD"]
     pwads = [r for r in rows if r["Kategorie"].upper() == "PWAD"]
     extras_raw = [r for r in rows if r["Kategorie"].upper() == "EXTRA"]
 
-    for i, r in enumerate(iwads, 1):
-        r["ID"] = str(i)
-    for i, r in enumerate(pwads, 1):
-        r["ID"] = str(i)
+    # 3. FORTLAUFENDE NUMMERIERUNG (Der Fix)
+    # Ein gemeinsamer Counter für IWADs und PWADs
+    counter = 1
 
+    for r in iwads:
+        r["ID"] = str(counter)
+        counter += 1
+
+    for r in pwads:
+        r["ID"] = str(counter)
+        counter += 1
+
+    # 4. Extras (Heretic/Hexen) wie gehabt mit H/X
     final_extras = []
     heretics = [r for r in extras_raw if "heretic" in r["IWAD"].lower()]
-    hexens = [r for r in extras_raw if "hexen" in r["IWAD"].lower()]
+    hexens = [
+        r
+        for r in extras_raw
+        if "hexen" in r["IWAD"].lower() or "hexdd" in r["IWAD"].lower()
+    ]
     others = [r for r in extras_raw if r not in heretics and r not in hexens]
 
     for i, r in enumerate(heretics, 1):
         r["ID"] = f"H{i}"
         final_extras.append(r)
+
     for i, r in enumerate(hexens, 1):
         r["ID"] = f"X{i}"
         final_extras.append(r)
+
     final_extras.extend(others)
 
+    # 5. Speichern
     fieldnames = [
         "ID",
         "Name",
@@ -294,6 +312,7 @@ def reorganize_map_indices() -> None:
 
 
 def get_next_id(category: str) -> str:
+    # Diese Funktion wird oft vom Installer genutzt, um eine provisorische ID zu vergeben
     if category == "HERETIC":
         return "H99"
     if category == "HEXEN":
