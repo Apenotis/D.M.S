@@ -7,6 +7,39 @@ from datetime import datetime
 import dms_core.config as cfg
 
 # ============================================================================
+# SESSION & LAST SELECTION (NEU: Fix für den hängenden Pfeil)
+# ============================================================================
+
+
+def get_last_id() -> str:
+    """Liest die absolut letzte Auswahl aus der Config."""
+    config = configparser.ConfigParser()
+    if os.path.exists(cfg.CONFIG_FILE):
+        try:
+            config.read(cfg.CONFIG_FILE, encoding="utf-8-sig")
+            if "SESSION" in config:
+                return config["SESSION"].get("last_id", "1")
+        except Exception:
+            pass
+    return "1"
+
+
+def save_last_id(map_id: str) -> None:
+    """Speichert die aktuelle Auswahl sofort in der Config."""
+    config = configparser.ConfigParser()
+    if os.path.exists(cfg.CONFIG_FILE):
+        try:
+            config.read(cfg.CONFIG_FILE, encoding="utf-8-sig")
+        except Exception:
+            pass
+    if "SESSION" not in config:
+        config["SESSION"] = {}
+    config["SESSION"]["last_id"] = str(map_id)
+    with open(cfg.CONFIG_FILE, "w", encoding="utf-8-sig") as f:
+        config.write(f)
+
+
+# ============================================================================
 # STATISTIKEN & SETTINGS
 # ============================================================================
 
@@ -76,17 +109,22 @@ def save_settings() -> None:
 
 
 # ============================================================================
-# MAP-MANAGEMENT
+# MAP-MANAGEMENT (OPTIMIERT & VOLLSTÄNDIG)
 # ============================================================================
 
 
 def update_last_played(map_id):
+    """Aktualisiert das Datum in der CSV und speichert die Last-ID in der Config."""
     if not os.path.exists(cfg.CSV_FILE):
         return
     rows = []
     today = datetime.now().strftime("%d.%m.%Y")
+
+    # Trenner sicher erkennen
     with open(cfg.CSV_FILE, "r", encoding="utf-8-sig") as f:
         delim = ";" if ";" in f.read(100) else ","
+
+    with open(cfg.CSV_FILE, "r", encoding="utf-8-sig") as f:
         f.seek(0)
         reader = list(csv.reader(f, delimiter=delim))
         header = reader[0]
@@ -96,13 +134,18 @@ def update_last_played(map_id):
                     row.append("-")
                 row[8] = today
             rows.append(row)
+
     with open(cfg.CSV_FILE, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.writer(f, delimiter=";")
+        writer = csv.writer(f, delimiter=delim)
         writer.writerow(header)
         writer.writerows(rows)
 
+    # Parallel dazu die Last-ID sichern
+    save_last_id(map_id)
+
 
 def get_last_played_id_from_csv():
+    """Backup-Funktion: Sucht die ID mit dem neuesten Datum."""
     if not os.path.exists(cfg.CSV_FILE):
         return "1"
     last_id, latest_date = "1", None
@@ -125,11 +168,12 @@ def get_last_played_id_from_csv():
 def toggle_map_clear(map_id: str) -> bool:
     rows, found = [], False
     with open(cfg.CSV_FILE, "r", encoding="utf-8-sig") as f:
-        reader = list(csv.reader(f))
+        delim = ";" if ";" in f.read(100) else ","
+        f.seek(0)
+        reader = list(csv.reader(f, delimiter=delim))
         header = reader[0]
-        rows.append(header)
         for row in reader[1:]:
-            if row[0].strip().upper() == map_id.upper():
+            if row and row[0].strip().upper() == map_id.upper():
                 found = True
                 row[1] = (
                     row[1].replace(" [C]", "") if " [C]" in row[1] else row[1] + " [C]"
@@ -137,14 +181,18 @@ def toggle_map_clear(map_id: str) -> bool:
             rows.append(row)
     if found:
         with open(cfg.CSV_FILE, "w", encoding="utf-8-sig", newline="") as f:
-            csv.writer(f).writerows(rows)
+            writer = csv.writer(f, delimiter=delim)
+            writer.writerow(header)
+            writer.writerows(rows)
     return found
 
 
 def toggle_mod_skip(map_id: str) -> bool:
     rows, found = [], False
     with open(cfg.CSV_FILE, "r", encoding="utf-8-sig") as f:
-        reader = list(csv.DictReader(f))
+        delim = ";" if ";" in f.read(100) else ","
+        f.seek(0)
+        reader = list(csv.DictReader(f, delimiter=delim))
         fieldnames = list(reader[0].keys())
         for row in reader:
             if row["ID"].strip().upper() == map_id.upper():
@@ -153,7 +201,7 @@ def toggle_mod_skip(map_id: str) -> bool:
             rows.append(row)
     if found:
         with open(cfg.CSV_FILE, "w", encoding="utf-8-sig", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=delim)
             writer.writeheader()
             writer.writerows(rows)
     return found
@@ -162,7 +210,9 @@ def toggle_mod_skip(map_id: str) -> bool:
 def uninstall_map(map_id: str) -> bool:
     rows, to_del, header = [], None, []
     with open(cfg.CSV_FILE, "r", encoding="utf-8-sig") as f:
-        reader = csv.reader(f)
+        delim = ";" if ";" in f.read(100) else ","
+        f.seek(0)
+        reader = csv.reader(f, delimiter=delim)
         header = next(reader)
         for row in reader:
             if row[0].strip().upper() == map_id.upper():
@@ -175,7 +225,7 @@ def uninstall_map(map_id: str) -> bool:
     if input("> ").strip() == "JA":
         shutil.rmtree(os.path.join(cfg.PWAD_DIR, to_del[3]), ignore_errors=True)
         with open(cfg.CSV_FILE, "w", encoding="utf-8-sig", newline="") as f:
-            writer = csv.writer(f)
+            writer = csv.writer(f, delimiter=delim)
             writer.writerow(header)
             writer.writerows(rows)
         reorganize_map_indices()
@@ -183,7 +233,7 @@ def uninstall_map(map_id: str) -> bool:
 
 
 # ============================================================================
-# REORGANIZE (ID-LOGIK & SPALTEN-SORTIERUNG)
+# REORGANIZE (ID-LOGIK)
 # ============================================================================
 
 
@@ -192,8 +242,9 @@ def reorganize_map_indices() -> None:
         return
     rows = []
     with open(cfg.CSV_FILE, "r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        # Wir filtern hier alle "EMPTY" Platzhalter radikal raus
+        delim = ";" if ";" in f.read(100) else ","
+        f.seek(0)
+        reader = csv.DictReader(f, delimiter=delim)
         rows = [
             r
             for r in list(reader)
@@ -203,18 +254,15 @@ def reorganize_map_indices() -> None:
     if not rows:
         return
 
-    # Kategorien trennen
     iwads = [r for r in rows if r["Kategorie"].upper() == "IWAD"]
     pwads = [r for r in rows if r["Kategorie"].upper() == "PWAD"]
     extras_raw = [r for r in rows if r["Kategorie"].upper() == "EXTRA"]
 
-    # Durchnummerieren
     for i, r in enumerate(iwads, 1):
         r["ID"] = str(i)
     for i, r in enumerate(pwads, 1):
         r["ID"] = str(i)
 
-    # Extras aufbereiten (Präfixe H/X)
     final_extras = []
     heretics = [r for r in extras_raw if "heretic" in r["IWAD"].lower()]
     hexens = [r for r in extras_raw if "hexen" in r["IWAD"].lower()]
@@ -223,14 +271,11 @@ def reorganize_map_indices() -> None:
     for i, r in enumerate(heretics, 1):
         r["ID"] = f"H{i}"
         final_extras.append(r)
-
     for i, r in enumerate(hexens, 1):
         r["ID"] = f"X{i}"
         final_extras.append(r)
-
     final_extras.extend(others)
 
-    # Speichern
     fieldnames = [
         "ID",
         "Name",
@@ -243,13 +288,12 @@ def reorganize_map_indices() -> None:
         "LastPlayed",
     ]
     with open(cfg.CSV_FILE, "w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=delim)
         writer.writeheader()
         writer.writerows(iwads + pwads + final_extras)
 
 
 def get_next_id(category: str) -> str:
-    """Provisorische ID für den Installer."""
     if category == "HERETIC":
         return "H99"
     if category == "HEXEN":

@@ -50,7 +50,7 @@ def _analyze_session(session_time: int, map_id: str, mapname: str) -> None:
                 row[8] = today
             rows.append(row)
 
-    # 2.3 Speichern (Mit dem ermittelten Original-Trennzeichen!)
+    # 2.3 Speichern
     with open(cfg.CSV_FILE, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f, delimiter=delim)
         writer.writerow(header)
@@ -62,6 +62,58 @@ def _analyze_session(session_time: int, map_id: str, mapname: str) -> None:
     time.sleep(1.5)
 
 
+def _select_additional_mods(target_dir):
+    """Zeigt ein Menü an, um gezielt Dateien aus dem Mod-Ordner zu wählen."""
+    if not target_dir or not os.path.exists(target_dir):
+        return []
+
+    extensions = (".wad", ".pk3", ".pk7", ".zip", ".7z")
+    files = [f for f in os.listdir(target_dir) if f.lower().endswith(extensions)]
+
+    if not files:
+        return []
+
+    selected_indices = []
+
+    while True:
+        utils.clear_screen()
+        print(f"\n  {Colors.CYAN}--- MOD-SELEKTOR ---{Colors.WHITE}")
+        print(f"  {Colors.GRAY}Ordner: {os.path.basename(target_dir)}{Colors.WHITE}\n")
+
+        for i, f in enumerate(files):
+            mark = (
+                f"{Colors.GREEN}[X]{Colors.WHITE}" if i in selected_indices else "[ ]"
+            )
+            print(f"  {mark} {i+1:2} - {f}")
+
+        print(
+            f"\n  {Colors.YELLOW}Tippe die Nummer zum Togglen, 'A' für Alle, ENTER zum Starten.{Colors.WHITE}"
+        )
+        # FIX F541: f-string entfernt
+        choice = input("  Selection: ").strip().lower()
+
+        if choice == "":
+            break
+        if choice == "a":
+            if len(selected_indices) == len(files):
+                selected_indices = []
+            else:
+                selected_indices = list(range(len(files)))
+            continue
+
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(files):
+                if idx in selected_indices:
+                    selected_indices.remove(idx)
+                else:
+                    selected_indices.append(idx)
+        except Exception:  # FIX E722: Bare except entfernt
+            pass
+
+    return [os.path.join(target_dir, files[i]) for i in selected_indices]
+
+
 def launch_game(map_data: tuple) -> None:
     """
     Bereitet den Start der ausgewählten Map vor.
@@ -69,13 +121,20 @@ def launch_game(map_data: tuple) -> None:
     utils.resize_terminal(70, 30)
     utils.clear_screen()
 
+    # --- DATEN ENTPAKKEN ---
     _, map_id, core, mapname, remaining, _ = map_data
     core = core.replace(" ", "").strip()
+    iwad_filename = core.lower()
 
     engine_path = engines.get_engine_path()
-    engine_name = cfg.CURRENT_ENGINE.lower()
+    # FIX F841: engine_name entfernt (ungenutzt)
+    current_engine_exe = os.path.basename(engine_path).lower()
 
+    # Konfiguration
     MOD_COMPATIBLE_ENGINES = ["gzdoom", "lzdoom", "zandronum", "uzdoom"]
+    DOOM_ONLY_ENGINES = ["woof", "nugget", "odamex", "dsda", "nugget-doom"]
+    NON_DOOM_GAMES = ["heretic.wad", "hexen.wad", "hexdd.wad", "strife1.wad"]
+
     VALID_EXTS = (
         ".wad",
         ".pk3",
@@ -89,34 +148,75 @@ def launch_game(map_data: tuple) -> None:
     )
 
     sub_folder = "doom"
-    if core.lower() == "heretic.wad":
+    if iwad_filename == "heretic.wad":
         sub_folder = "heretic"
-    elif core.lower() == "hexen.wad":
+    elif iwad_filename == "hexen.wad":
         sub_folder = "hexen"
 
-    file_params, extra_params = [], []
-    mod_flag = False
-    auto_mod = None
+    # ========================================================================
+    # 1. KOMPATIBILITÄTS-CHECK
+    # ========================================================================
+    is_non_doom = iwad_filename in NON_DOOM_GAMES
+    engine_is_restricted = any(eng in current_engine_exe for eng in DOOM_ONLY_ENGINES)
 
-    # --- Tracking Variablen für das schöne Debug-Menü ---
+    if is_non_doom and engine_is_restricted:
+        box_w = 100
+        utils.resize_terminal(box_w + 10, 32)
+        utils.clear_screen()
+        inner_w_err = box_w - 2
+
+        def print_err_line(text, color=Colors.WHITE, align="left"):
+            v_len = utils.real_len(text)
+            pad = inner_w_err - v_len
+            if align == "center":
+                pl = pad // 2
+                pr = pad - pl
+                content = f"{' ' * pl}{text}{' ' * pr}"
+            else:
+                content = f" {text}{' ' * (pad - 1)}"
+            print(f"  {Colors.RED}║{color}{content}{Colors.RED}║")
+
+        print(f"\n  {Colors.RED}╔{'═' * inner_w_err}╗")
+        print_err_line("INKOMPATIBILITÄTS-WARNUNG", Colors.WHITE, "center")
+        print(f"  {Colors.RED}╠{'═' * inner_w_err}╣")
+        print_err_line(f"Spiel:       {Colors.YELLOW}{mapname}")
+        print_err_line(f"Engine:      {Colors.YELLOW}{cfg.CURRENT_ENGINE}")
+        print_err_line("")
+        print_err_line("Diese Engine ist ein spezialisierter Doom-Port und unterstützt")
+        print_err_line("Heretic oder Hexen technisch nicht.")
+        print_err_line("")
+        print_err_line(
+            "LÖSUNG: Bitte im Menü [E] drücken und GZDoom oder Zandronum wählen.",
+            Colors.CYAN,
+        )
+        print(f"  {Colors.RED}╚{'═' * inner_w_err}╝{Colors.WHITE}")
+        input(
+            f"\n    {Colors.GRAY}Drücke ENTER, um zum Menü zurückzukehren...{Colors.WHITE}"
+        )
+        utils.resize_terminal(cfg.TERMINAL_WIDTH, 50)
+        return
+
+    # ========================================================================
+    # 2. PARAMETER PARSEN (0=MODS AN / 1=MODS AUS)
+    # ========================================================================
+    file_params, extra_params = [], []
+    mod_flag = True  # Standardmäßig True (wegen Installer-0)
+    auto_mod = None
     found_files_list = []
     target_dir_display = "Kein Ordner definiert (Basis-IWAD)"
     selected_mod_name = ""
 
-    # ========================================================================
-    # 1. PARAMETER PARSEN (1:1 Original Doom.py Logik)
-    # ========================================================================
     i = 0
     while i < len(remaining):
         item = str(remaining[i]).strip()
         if not item:
             i += 1
             continue
-
-        if item == "1":
+        # --- LOGIK-UMKEHR ---
+        if item == "0":
             mod_flag = True
             i += 1
-        elif item == "0":
+        elif item == "1":
             mod_flag = False
             i += 1
         elif item.startswith("-") or item.startswith("+"):
@@ -145,9 +245,8 @@ def launch_game(map_data: tuple) -> None:
                 if os.path.exists(p):
                     target_path = p
                     break
-
             if target_path:
-                target_dir_display = target_path  # Für Debug sichern
+                target_dir_display = target_path
                 if os.path.isdir(target_path):
                     for f in os.listdir(target_path):
                         if f.lower().endswith(VALID_EXTS):
@@ -167,14 +266,17 @@ def launch_game(map_data: tuple) -> None:
             i += 1
 
     # ========================================================================
-    # 2. MOD-AUSWAHLMENÜ
+    # 3. MOD-AUSWAHLMENÜ
     # ========================================================================
     mod_params = []
-    if mod_flag and cfg.USE_MODS and engine_name in MOD_COMPATIBLE_ENGINES:
+    if (
+        mod_flag
+        and cfg.USE_MODS
+        and any(eng in current_engine_exe for eng in MOD_COMPATIBLE_ENGINES)
+    ):
         mod_options = ["Keine Mods"]
         if auto_mod:
             mod_options.append(f"[AUTO] {auto_mod}")
-
         mod_base = os.path.join(cfg.BASE_DIR, "mods", sub_folder)
         if os.path.exists(mod_base):
             for d in os.listdir(mod_base):
@@ -190,24 +292,20 @@ def launch_game(map_data: tuple) -> None:
             print(
                 f"  ╰──────────────────────────────────────────────────╯{Colors.WHITE}\n"
             )
-
             for idx, m_opt in enumerate(mod_options):
                 print(f"  {Colors.YELLOW}[{idx}]{Colors.WHITE} {m_opt}")
-
             choice = input(
                 f"\n  {Colors.YELLOW}Wahl (ENTER = Keine): {Colors.WHITE}"
             ).strip()
             if choice.isdigit() and 0 < int(choice) < len(mod_options):
                 selected_mod = mod_options[int(choice)]
-                selected_mod_name = selected_mod  # Für Debug sichern
-
+                selected_mod_name = selected_mod
                 if selected_mod.startswith("[AUTO] "):
                     mod_folder_path = os.path.join(
                         cfg.BASE_DIR, "mods", selected_mod.replace("[AUTO] ", "")
                     )
                 else:
                     mod_folder_path = os.path.join(mod_base, selected_mod)
-
                 if os.path.exists(mod_folder_path):
                     for f in os.listdir(mod_folder_path):
                         if f.lower().endswith(VALID_EXTS):
@@ -216,87 +314,127 @@ def launch_game(map_data: tuple) -> None:
                             )
 
     # ========================================================================
-    # 3. BEFEHL ZUSAMMENBAUEN
+    # 4. BEFEHL ZUSAMMENBAUEN
     # ========================================================================
     iwad_full_path = os.path.join(cfg.IWAD_DIR, core)
     cmd = (
         [engine_path, "-iwad", iwad_full_path] + file_params + mod_params + extra_params
     )
 
+    if not engine_is_restricted:
+        if iwad_filename == "heretic.wad":
+            if "-heretic" not in cmd:
+                cmd.append("-heretic")
+        elif iwad_filename in ["hexen.wad", "hexdd.wad"]:
+            if "-hexen" not in cmd:
+                cmd.append("-hexen")
+
+    db.save_last_id(map_id)
+
     # ========================================================================
-    # 4. DAS AUFGEHÜBSCHTE DEBUG-MENÜ
+    # 5. DEBUG-MENÜ
     # ========================================================================
     if cfg.DEBUG_MODE:
+        import textwrap
+
+        inner_w_debug = 140
+        utils.resize_terminal(inner_w_debug + 8, 48)
         utils.clear_screen()
-        inner_w = 80
-        print(f"\n  {Colors.RED}╭{'─' * inner_w}╮")
-        print(
-            f"  │ {Colors.WHITE}{'SYSTEM-CHECK VOR SPIELSTART (DEBUG)':^{inner_w-2}} {Colors.RED}│"
-        )
-        print(f"  ╰{'─' * inner_w}╯{Colors.WHITE}")
+        BORD, LABL, TEXT = Colors.RED, Colors.CYAN, Colors.WHITE
 
-        # Sektion 1: Metadaten
-        print(f"\n  {Colors.CYAN}[ ÜBERSICHT ]")
-        print(f"  {Colors.GRAY}ID:      {Colors.WHITE}{map_id}")
-        print(f"  {Colors.GRAY}NAME:    {Colors.WHITE}{mapname}")
-        print(f"  {Colors.GRAY}IWAD:    {Colors.WHITE}{core}")
-        print(
-            f"  {Colors.GRAY}ENGINE:  {Colors.BLUE}{cfg.CURRENT_ENGINE}{Colors.WHITE} ({os.path.basename(engine_path)})"
-        )
-
-        # Sektion 2: Datei-Check (Ordner, WADs, Mods, Args)
-        print(f"\n  {Colors.CYAN}[ DATEI-CHECK ]")
-        print(f"  {Colors.GRAY}ORDNER:  {Colors.WHITE}{target_dir_display}")
-
-        if found_files_list:
-            for f in found_files_list:
-                print(f"  {Colors.GREEN}  ▶ MAP: {Colors.WHITE}{f}")
-        elif target_dir_display != "Kein Ordner definiert (Basis-IWAD)":
+        def print_line(char="═"):
+            # FIX E225: Leerzeichen um das Minus (-)
             print(
-                f"  {Colors.RED}  [!] KEINE ZUSATZDATEIEN (PWADS) IM ORDNER GEFUNDEN!"
+                f"  {BORD}{('╔' if char == '═' else '╠')}{char * (inner_w_debug - 4)}{('╗' if char == '═' else '╣')}"
             )
 
+        def print_row(label, value, val_color=TEXT):
+            content = f"{LABL}{label:<14} {BORD}│ {val_color}{value}"
+            # FIX E225: Leerzeichen um das Minus (-)
+            pad = (inner_w_debug - 6) - utils.real_len(content)
+            print(f"  {BORD}║ {content}{' ' * pad} {BORD}║")
+
+        print_line("═")
+        # FIX E225: Leerzeichen um das Minus (-)
+        print(
+            f"  {BORD}║ {Colors.YELLOW}{'D.M.S. PRE-FLIGHT DIAGNOSTICS':^{inner_w_debug - 6}} {BORD}║"
+        )
+        print_line("─")
+        print_row("SYSTEM", "DOOM MANAGEMENT SYSTEM - KERNEL BRIDGE", Colors.GREEN)
+        print_row("GAME-ID", f"[{map_id}]")
+        print_row("TITELEINTRAG", mapname)
+        print_row("BASIS-IWAD", core)
+        print_row("ENGINE-PFAD", engine_path, Colors.BLUE)
+        print_line("─")
+        print_row("MOD-ORDNER", target_dir_display)
+
+        if found_files_list:
+            for i, f in enumerate(found_files_list):
+                print_row("DATEIEN" if i == 0 else "", f"▶ {f}", Colors.GREEN)
+
         if selected_mod_name:
-            print(f"  {Colors.YELLOW}  ▶ MOD: {Colors.WHITE}{selected_mod_name}")
+            print_row("ZUSATZ-MOD", selected_mod_name, Colors.YELLOW)
 
         if extra_params:
-            print(f"  {Colors.MAGENTA}  ▶ ARGS:{Colors.WHITE} {' '.join(extra_params)}")
+            print_row("PARAMETER", " ".join(extra_params), Colors.MAGENTA)
 
-        # Sektion 3: Kommando
-        print(f"\n  {Colors.CYAN}[ RAW COMMAND LINE ]")
-        display_cmd = " ".join(f'"{x}"' if " " in x else x for x in cmd)
+        print_line("─")
+        # FIX E225: Leerzeichen um das Minus (-)
+        print(f"  {BORD}║ {LABL}RAW COMMAND LINE:{' ' * (inner_w_debug - 23)} {BORD}║")
 
-        if len(display_cmd) > inner_w:
-            print(f"  {Colors.YELLOW}{display_cmd[:inner_w-5]}...")
-            print(f"  {Colors.YELLOW}  {display_cmd[inner_w-5:inner_w*2-10]}")
-        else:
-            print(f"  {Colors.YELLOW}{display_cmd}")
+        full_cmd = " ".join(f'"{x}"' if " " in x else x for x in cmd)
+        # FIX E225: Leerzeichen um das Minus (-)
+        for line in textwrap.wrap(full_cmd, width=inner_w_debug - 10):
+            print(f"  {BORD}║ {Colors.YELLOW}  {line:<{inner_w_debug - 8}} {BORD}║")
 
-        print(f"\n  {Colors.YELLOW}Möchtest du das Spiel starten?{Colors.WHITE}")
+        # FIX E225: Leerzeichen um das Minus (-)
+        print(f"  {BORD}╚{('═' * (inner_w_debug - 4))}╝{Colors.WHITE}")
+
+        try:
+            import msvcrt
+
+            while msvcrt.kbhit():
+                msvcrt.getch()
+        except Exception:
+            pass
+
+        # FIX: Symmetrischer Input-Check
         choice = input(
-            f"  {Colors.GREEN}ENTER zum Starten{Colors.WHITE} / {Colors.RED}0 zum Abbruch: {Colors.WHITE}"
+            f"\n  {Colors.GREEN}[ENTER]{Colors.WHITE} Starten  {Colors.RED}[0]{Colors.WHITE} Abbrechen: "
         ).strip()
-
         if choice == "0":
+            utils.resize_terminal(cfg.TERMINAL_WIDTH, 50)
             return
 
     # ========================================================================
-    # 5. START & SESSION TRACKING
+    # 6. START & LOGGING
     # ========================================================================
+    LOG_DIR = os.path.join(cfg.BASE_DIR, "logs")
+    os.makedirs(LOG_DIR, exist_ok=True)
+    log_file_path = os.path.join(LOG_DIR, "engine_output.log")
+
     if not cfg.DEBUG_MODE:
         utils.clear_screen()
         print(f"\n  {Colors.GREEN}Starte {mapname}...{Colors.WHITE}")
 
     start_time = time.time()
     try:
-        proc = subprocess.Popen(cmd, cwd=os.path.dirname(engine_path))
-        proc.wait()  # Wartet, bis die Engine geschlossen wird
+        with open(log_file_path, "w", encoding="utf-8") as log_file:
+            # FIX E225: Leerzeichen um das Minus (-)
+            log_file.write(f"D.M.S. COMMAND: {' '.join(cmd)}\n{'-' * 80}\n\n")
+            log_file.flush()
+            proc = subprocess.Popen(
+                cmd,
+                cwd=os.path.dirname(engine_path),
+                stdout=log_file,
+                stderr=log_file,
+                text=True,
+            )
+            proc.wait()
     except Exception as e:
-        print(f"\n  {Colors.RED}FEHLER BEIM STARTEN: {e}{Colors.WHITE}")
-        input("  ENTER drücken...")
+        print(f"\n  {Colors.RED}START-FEHLER: {e}{Colors.WHITE}")
+        input()
         return
 
-    end_time = time.time()
-    session_time = int(end_time - start_time)
-
+    session_time = int(time.time() - start_time)
     _analyze_session(session_time, map_id, mapname)
